@@ -1,6 +1,6 @@
 import sqlite3
 
-conn = sqlite3.connect('lt_osf.db')
+conn = sqlite3.connect('lt_osf.sqlite')
 
 conn.execute(
     """

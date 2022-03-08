@@ -1,5 +1,6 @@
 import requests
 from config import *
+from sqlite3 import IntegrityError
 
 
 # for some user, collect: date_registered, socials, employment, education
@@ -17,14 +18,20 @@ def get_user_profile(guid, conn):
     if resp.ok:
         resp_dict = resp.json()['data']['attributes']
     else:
-        print(resp.reason)
+        print(f'users request failed: {resp.reason}')
         return
 
-    conn.execute(
-        "INSERT INTO users(id, full_name, date_created) VALUES (?, ?, ?)",
-        (guid, resp_dict['full_name'], resp_dict['date_registered'])
-    )
-    conn.commit()
+    # exit process if user already exists
+    try:
+        conn.execute(
+            "INSERT INTO users(id, full_name, date_created) VALUES (?, ?, ?)",
+            (guid, resp_dict['full_name'], resp_dict['date_registered'])
+        )
+    except IntegrityError:
+        print('user already exists in users table')
+        return
+    else:
+        conn.commit()
 
     # if socials are available, add each to socials table
     try:

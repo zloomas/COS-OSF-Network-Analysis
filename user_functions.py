@@ -1,6 +1,9 @@
 import re
 import requests
 import sqlite3
+import functools
+from multiprocessing import Pool
+from math import ceil
 from config import base_url, headers
 
 
@@ -214,54 +217,121 @@ def load_user_profile(user_insert):
     conn.close()
 
 
-def get_user_nodes(guid):
+def get_user_resources(guid, resource_type, page):
+    """
+    Given user GUID, get all nodes for user from OSF
+
+    :param guid: OSF GUID of a user profile
+    :param resource_type: one of 'nodes', 'registrations', 'preprints'
+    :param page:
+    :return: successful response dictionary, or empty dictionary
+    """
+
+    nodes_url = f'{base_url}/users/{guid}/{resource_type}'
+    resp = requests.get(nodes_url, headers=headers, params={'page': page})
+
+    if resp.ok:
+        resp_json = resp.json()
+    else:
+        print(f'{resource_type} request failed at {resp.url}: {resp.status_code} - {resp.reason}')
+        return {}
+
+    return resp_json
+
+
+def concat_lists(list_a, list_b):
+    return list_a + list_b
+
+
+def map_get_user_resources(guid, resource_type, page_range):
     """
 
     :param guid:
+    :param resource_type:
+    :param page_range:
     :return:
     """
 
-    def get_nodes(guid, page=1):
-        """
-        Given user GUID, get all nodes for user from OSF
-
-        :param guid: OSF GUID of a user profile
-        :param page:
-        :return: None
-        """
-
-        nodes_url = base_url + '/users/' + guid + '/nodes'
-        resp = requests.get(nodes_url, headers=headers, params={'page': page})
-
-        if resp.ok:
-            resp_dict = resp.json()['data']
-        else:
-            print(f'nodes request failed at {resp.url}: {resp.status_code} - {resp.reason}')
-            resp_dict = {}
-
-        return resp_dict
-
-    num_nodes = resp_dict['links']['meta']['total']
-    last_link = resp_dict['links']['last']
-    if last_link is not None:
-        num_pages = int(re.findall(r'[0-9]+$', last_link)[0])
+    if resource_type == 'nodes':
+        date_field = 'date_created'
+    elif resource_type == 'registrations':
+        date_field = 'date_registered'
+    elif resource_type == 'preprints':
+        date_field = 'date_published'
     else:
-        num_pages = 1
+        print('resource_type is not supported, exiting process')
+        return
 
-    nodes = [None for _ in range(num_nodes)]
+    projects = [None for _ in range(len(page_range)*10)]
+    ix = 0
 
-    for ix, node in enumerate(resp_dict['data']):
-        nodes[ix] = (node['id'], node['attributes']['title'], node['attributes']['date_created'])
+    for page in page_range:
 
-    if num_pages > 1:
-        for page in range(2, num_pages + 1):
-            page_resp = requests.get(nodes_url, params={'page': page}, headers=headers)
-            if page_resp.ok:
-                resp_dict = resp.json()['data']
+        response = get_user_resources(guid, resource_type, page)
+        if not response:
+            print(f'empty project response for user {guid} on page {page}')
+            print('exiting process')
+            break
 
-            else:
-                print(f'{guid} nodes page {page} request failed: {page_resp.reason}')
-                continue
+        for node in response['data']:
+            projects[ix] = (node['id'], node['attributes']['title'], node['attributes'][date_field])
+            ix += 1
+
+    return projects
+
+
+def map_reduce_get_user_resources(guid, resource_type, num_processes=2):
+    """
+
+    :param guid:
+    :param resource_type:
+    :param num_processes:
+    :return:
+    """
+
+    response = get_user_resources(guid, resource_type, page=1)
+
+    if not response:
+        return
+
+    if resource_type == 'nodes':
+        date_field = 'date_created'
+    elif resource_type == 'registrations':
+        date_field = 'date_registered'
+    elif resource_type == 'preprints':
+        date_field = 'date_published'
+    else:
+        print('resource_type is not supported, exiting process')
+        return
+
+    initial_nodes = [None for _ in range(10)]
+    ix = 0
+
+    for node in response['data']:
+        initial_nodes[ix] = (node['id'], node['attributes']['title'], node['attributes'][date_field])
+        ix += 1
+
+    num_pages = ceil(response['links']['meta']['total'] / 10)
+
+    if num_pages == 1:
+        return initial_nodes
+
+    pages = [num for num in range(2, num_pages + 1)]
+
+    chunk_len = ceil(len(pages) / num_processes)
+
+    chunks = [(guid, resource_type, pages[i:i + chunk_len]) for i in range(0, len(pages), chunk_len)]
+
+    with Pool(num_processes) as pool:
+        chunk_results = pool.starmap(map_get_user_resources, chunks)
+
+    nodes = functools.reduce(concat_lists, chunk_results)
+
+    resources = initial_nodes + nodes
+
+    resources = list(filter(lambda x: x is not None, resources))
+
+    return resources
 
 
 def load_nodes(resp_data, conn):

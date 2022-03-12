@@ -1,146 +1,267 @@
 import re
 import requests
+import sqlite3
 from config import base_url, headers
 
 
-# for some user, collect: date_registered, socials, employment, education
-def get_user_profile(guid, conn):
+# for some user, collect: name, date_registered, socials, employment, education
+def get_user(guid):
     """
-    Given user GUID and database connection, get user profile data from OSF, add to appropriate tables in database.
+    Given user GUID, get user profile data from OSF, return data object.
 
     :param guid: OSF GUID of a user profile
-    :param conn: SQLite3 Connection
     :return: None
     """
 
-    resp = requests.get(base_url + '/users/' + guid, headers=headers)
+    response = requests.get(base_url + '/users/' + guid, headers=headers)
 
-    if resp.ok:
-        resp_dict = resp.json()['data']['attributes']
+    if response.ok:
+        resp_json = response.json()['data']
     else:
-        print(f'{guid} users request failed: {resp.reason}')
+        print(f'users request failed at {response.url}: {response.status_code} - {response.reason}')
+        resp_json = {}
+
+    return resp_json
+
+
+def process_user_socials(response_json):
+    """
+    Given OSF user response dictionary, extract user socials and prepare list of tuples for insertion into DB.
+
+    :param response_json:
+    :return:
+    """
+
+    guid = response_json['id']
+
+    socials = []
+    # if socials are available, add each to socials list as tuple (guid, platform, username)
+    for key, val in response_json['attributes']['social'].items():
+        # require non-null username/ID for each platform, ignore if empty string
+        # websites are returned as a list and must be parsed into discrete entries
+        if key == 'profileWebsites' and len(val):
+            for site in val:
+                if len(site):
+                    socials.append((guid, key, site))
+        else:
+            if len(val):
+                socials.append((guid, key, val))
+
+    return socials
+
+
+def process_user_employment(response_json):
+    """
+    Given OSF user response dictionary, extract user employment and prepare list of tuples for insertion into DB.
+
+    :param response_json:
+    :return:
+    """
+
+    guid = response_json['id']
+
+    employment = []
+    # if socials are available, add each to socials list as tuple (guid, platform, username)
+    for job in response_json['attributes']['employment']:
+        # require title and institution, if either is empty skip entry
+        title = job['title']
+        if not len(title):
+            continue
+
+        institution = job['institution']
+        if not len(institution):
+            continue
+
+        # require numeric year values for start and end dates
+        try:
+            start_year = int(job['startYear'])
+        except ValueError:
+            start_year = None
+
+        ongoing = job['ongoing']
+
+        # no end date expected if job is ongoing
+        if ongoing:
+            end_year = None
+        else:
+            try:
+                end_year = int(job['endYear'])
+            except ValueError:
+                end_year = None
+
+        employment.append(
+            (guid, title, institution, start_year, end_year, ongoing)
+        )
+
+    return employment
+
+
+def process_user_education(response_json):
+    """
+    Given OSF user response dictionary, extract user education history and prepare list of tuples for insertion into DB.
+
+    :param response_json:
+    :return:
+    """
+    guid = response_json['id']
+
+    education = []
+    for e in response_json['attributes']['education']:
+        # require degree and institution, if either is empty skip entry
+        degree = e['degree']
+        if not len(degree):
+            continue
+
+        institution = e['institution']
+        if not len(institution):
+            continue
+
+        # require numeric year values for start and end dates
+        try:
+            start_year = int(e['startYear'])
+        except ValueError:
+            start_year = None
+
+        ongoing = e['ongoing']
+
+        # no end date expected if degree is ongoing
+        if ongoing:
+            end_year = None
+        else:
+            try:
+                end_year = int(e['endYear'])
+            except ValueError:
+                end_year = None
+
+        education.append(
+            (guid, degree, institution, start_year, end_year, ongoing)
+        )
+
+    return education
+
+
+def process_user_profile(guid):
+    """
+
+    :param guid: OSF GUID of a user profile
+    :return:
+    """
+
+    user_insert = {}
+    user_resp = get_user(guid)
+
+    if not user_resp:
+        return user_insert
+
+    user_insert['user'] = (
+        user_resp['id'],
+        user_resp['attributes']['full_name'],
+        user_resp['attributes']['date_registered']
+    )
+    user_insert['social'] = process_user_socials(user_resp)
+    user_insert['employment'] = process_user_employment(user_resp)
+    user_insert['education'] = process_user_education(user_resp)
+
+    return user_insert
+
+
+def load_user_profile(user_insert):
+    """
+
+    :param user_insert:
+    :return: None
+    """
+
+    conn = sqlite3.connect('lt_osf.sqlite')
+    if not user_insert:
+        print('no data in user_insert, exiting process')
         return
 
-    conn.execute(
-        "INSERT OR REPLACE INTO users(id, full_name, date_created) VALUES (?, ?, ?)",
-        (guid, resp_dict['full_name'], resp_dict['date_registered'])
-    )
-    conn.commit()
+    if user_insert['user']:
+        conn.execute(
+            "INSERT OR REPLACE INTO users(id, full_name, date_created) VALUES (?, ?, ?)",
+            user_insert['user']
+        )
+        conn.commit()
 
-    # if socials are available, add each to socials table
-    socials = resp_dict['social']
-    if socials:
-        # generate list of entires as tuples
-        socials_insert = []
-        for key, val in socials.items():
-            # require username/ID for each platform, ignore if empty
-            # websites are returned as a list and must be parsed into discrete entries
-            if key == 'profileWebsites' and len(val):
-                for site in val:
-                    if len(site):
-                        socials_insert.append((guid, key, site))
+    if user_insert['social']:
+        conn.executemany(
+            "INSERT OR REPLACE INTO socials(id, platform, name) VALUES (?, ?, ?)",
+            user_insert['social']
+        )
+        conn.commit()
+
+    if user_insert['employment']:
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO jobs(id, title, institution, start_year, end_year, ongoing) 
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            user_insert['employment']
+        )
+        conn.commit()
+
+    if user_insert['education']:
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO education(id, degree, institution, start_year, end_year, ongoing) 
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            user_insert['education']
+        )
+        conn.commit()
+
+    conn.close()
+
+
+def get_user_nodes(guid):
+    """
+
+    :param guid:
+    :return:
+    """
+
+    def get_nodes(guid, page=1):
+        """
+        Given user GUID, get all nodes for user from OSF
+
+        :param guid: OSF GUID of a user profile
+        :param page:
+        :return: None
+        """
+
+        nodes_url = base_url + '/users/' + guid + '/nodes'
+        resp = requests.get(nodes_url, headers=headers, params={'page': page})
+
+        if resp.ok:
+            resp_dict = resp.json()['data']
+        else:
+            print(f'nodes request failed at {resp.url}: {resp.status_code} - {resp.reason}')
+            resp_dict = {}
+
+        return resp_dict
+
+    num_nodes = resp_dict['links']['meta']['total']
+    last_link = resp_dict['links']['last']
+    if last_link is not None:
+        num_pages = int(re.findall(r'[0-9]+$', last_link)[0])
+    else:
+        num_pages = 1
+
+    nodes = [None for _ in range(num_nodes)]
+
+    for ix, node in enumerate(resp_dict['data']):
+        nodes[ix] = (node['id'], node['attributes']['title'], node['attributes']['date_created'])
+
+    if num_pages > 1:
+        for page in range(2, num_pages + 1):
+            page_resp = requests.get(nodes_url, params={'page': page}, headers=headers)
+            if page_resp.ok:
+                resp_dict = resp.json()['data']
+
             else:
-                if len(val):
-                    socials_insert.append((guid, key, val))
-
-        if socials_insert:
-            conn.executemany(
-                "INSERT OR REPLACE INTO socials(id, platform, name) VALUES (?, ?, ?)",
-                socials_insert
-            )
-            conn.commit()
-
-    # if job history is available, add each position to jobs table
-    employment = resp_dict['employment']
-    if employment:
-        # generate list of entires as tuples
-        jobs_insert = []
-        for job in employment:
-            # require title and institution, if either is empty skip entry
-            title = job['title']
-            if not len(title):
+                print(f'{guid} nodes page {page} request failed: {page_resp.reason}')
                 continue
-
-            institution = job['institution']
-            if not len(institution):
-                continue
-
-            # require numeric year values for start and end dates
-            try:
-                start_year = int(job['startYear'])
-            except ValueError:
-                start_year = None
-
-            ongoing = job['ongoing']
-
-            # no end date expected if job is ongoing
-            if ongoing:
-                end_year = None
-            else:
-                try:
-                    end_year = int(job['endYear'])
-                except ValueError:
-                    end_year = None
-
-            jobs_insert.append(
-                (guid, title, institution, start_year, end_year, ongoing)
-            )
-
-        if jobs_insert:
-            conn.executemany(
-                """
-                INSERT OR REPLACE INTO jobs(id, title, institution, start_year, end_year, ongoing) 
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                jobs_insert
-            )
-            conn.commit()
-
-    # if education history is available, add each position to education table
-    education = resp_dict['education']
-    if education:
-        # generate list of entires as tuples
-        education_insert = []
-        for e in education:
-            # require degree and institution, if either is empty skip entry
-            degree = e['degree']
-            if not len(degree):
-                continue
-
-            institution = e['institution']
-            if not len(institution):
-                continue
-
-            # require numeric year values for start and end dates
-            try:
-                start_year = int(e['startYear'])
-            except ValueError:
-                start_year = None
-
-            ongoing = e['ongoing']
-
-            # no end date expected if degree is ongoing
-            if ongoing:
-                end_year = None
-            else:
-                try:
-                    end_year = int(e['endYear'])
-                except ValueError:
-                    end_year = None
-
-            education_insert.append(
-                (guid, degree, institution, start_year, end_year, ongoing)
-            )
-
-        if education_insert:
-            conn.executemany(
-                """
-                INSERT OR REPLACE INTO education(id, degree, institution, start_year, end_year, ongoing) 
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                education_insert
-            )
-            conn.commit()
 
 
 def load_nodes(resp_data, conn):
@@ -171,12 +292,11 @@ def load_nodes(resp_data, conn):
 
 
 # for some user, collect all project GUIDs
-def get_user_nodes(guid, conn):
+def get_user_nodes(guid):
     """
-    Given user GUID and database connection, get all nodes for user from OSF, add to appropriate tables in database.
+    Given user GUID, get all nodes for user from OSF
 
     :param guid: OSF GUID of a user profile
-    :param conn: SQLite3 Connection
     :return: None
     """
 
@@ -207,3 +327,15 @@ def get_user_nodes(guid, conn):
 
 # for some user, collect all registration GUIDs
 # for some user, collect all preprint GUIDs
+
+
+def main():
+    from config import lt_guids
+
+    for prof in lt_guids.values():
+        user = process_user_profile(prof)
+        load_user_profile(user)
+
+
+if __name__ == '__main__':
+    main()

@@ -10,10 +10,10 @@ from config import base_url, headers
 # for some user, collect: name, date_registered, socials, employment, education
 def get_user(guid):
     """
-    Given user GUID, get user profile data from OSF, return data object.
+    Given user GUID, get user profile data from OSF. Prints errors to console if request fails.
 
     :param guid: OSF GUID of a user profile
-    :return: None
+    :return: dictionary, data key of json response or empty if response failed
     """
 
     response = requests.get(base_url + '/users/' + guid, headers=headers)
@@ -30,9 +30,10 @@ def get_user(guid):
 def process_user_socials(response_json):
     """
     Given OSF user response dictionary, extract user socials and prepare list of tuples for insertion into DB.
+    Intended to be used with get_user().
 
-    :param response_json:
-    :return:
+    :param response_json: content of 'data' key from user profile response
+    :return: list of tuples of form (guid, platform, username) for insertion into DB
     """
 
     guid = response_json['id']
@@ -56,15 +57,17 @@ def process_user_socials(response_json):
 def process_user_employment(response_json):
     """
     Given OSF user response dictionary, extract user employment and prepare list of tuples for insertion into DB.
+    Intended to be used with get_user().
 
-    :param response_json:
-    :return:
+    :param response_json: content of 'data' key from user profile response
+    :return: list of tuples of form (guid, title, institution, start_year, end_year, ongoing) for insertion into DB
     """
 
     guid = response_json['id']
 
     employment = []
-    # if socials are available, add each to socials list as tuple (guid, platform, username)
+    # if employment history is available, add each position to employment list as tuple with form:
+    # (guid, title, institution, start_year, end_year, ongoing)
     for job in response_json['attributes']['employment']:
         # require title and institution, if either is empty skip entry
         title = job['title']
@@ -101,10 +104,11 @@ def process_user_employment(response_json):
 
 def process_user_education(response_json):
     """
-    Given OSF user response dictionary, extract user education history and prepare list of tuples for insertion into DB.
+    Given OSF user response dictionary, extract user education and prepare list of tuples for insertion into DB.
+    Intended to be used with get_user().
 
-    :param response_json:
-    :return:
+    :param response_json: content of 'data' key from user profile response
+    :return: list of tuples of form (guid, degree, institution, start_year, end_year, ongoing) for insertion into DB
     """
     guid = response_json['id']
 
@@ -145,13 +149,16 @@ def process_user_education(response_json):
 
 def process_user_profile(guid):
     """
+    Given user GUID, get user profile data from OSF. Parse to create lists of profile information regarding
+    social media platforms, education, and employment history.
 
     :param guid: OSF GUID of a user profile
-    :return:
+    :return: dictionary with keys 'user', 'social', 'employment', 'education', where each has a list of tuples
+    for insertion into DB, or an empty list if data is unavailable.
     """
 
-    user_insert = {}
     user_resp = get_user(guid)
+    user_insert = {}
 
     if not user_resp:
         return user_insert
@@ -170,8 +177,10 @@ def process_user_profile(guid):
 
 def load_user_profile(user_insert):
     """
+    Given OSF user data, insert or replace user data in appropriate tables in DB.
+    Intended to be used with process_user_profile().
 
-    :param user_insert:
+    :param user_insert: dictionary from process_user_profile(), expects keys: 'user', 'social', 'employment', 'education'
     :return: None
     """
 
@@ -219,13 +228,20 @@ def load_user_profile(user_insert):
 
 def get_user_resources(guid, resource_type, page):
     """
-    Given user GUID, get all nodes for user from OSF
+    Given user GUID, get one page of nodes of some type from OSF
 
     :param guid: OSF GUID of a user profile
-    :param resource_type: one of 'nodes', 'registrations', 'preprints'
-    :param page:
-    :return: successful response dictionary, or empty dictionary
+    :param resource_type: one of 'nodes', 'registrations', 'preprints' to indicate what type of resource to request
+    from OSF
+    :param page: int, which page of results to request
+    :return: response json if response is successful, else empty dictionary
     """
+    resp_json = {}
+
+    if resource_type not in ['nodes', 'registrations', 'preprints']:
+        print(f'{resource_type} is not supported, must be one of nodes, registrations, or preprints')
+        print(f'exiting process at get_user_resources({guid}, {resource_type}, {page})')
+        return resp_json
 
     nodes_url = f'{base_url}/users/{guid}/{resource_type}'
     resp = requests.get(nodes_url, headers=headers, params={'page': page})
@@ -234,22 +250,31 @@ def get_user_resources(guid, resource_type, page):
         resp_json = resp.json()
     else:
         print(f'{resource_type} request failed at {resp.url}: {resp.status_code} - {resp.reason}')
-        return {}
 
     return resp_json
 
 
 def concat_lists(list_a, list_b):
+    """
+    Concatenate two lists. Intended to be used as reduce function in map_reduce_get_user_resources().
+
+    :param list_a: a list
+    :param list_b: a list
+    :return: concatenated list of contents of list_a and list_b
+    """
     return list_a + list_b
 
 
 def map_get_user_resources(guid, resource_type, page_range):
     """
+    Maps get_user_resources() to provided page_range.
+    Processes resource data to prepare for insertion into DB.
 
-    :param guid:
-    :param resource_type:
-    :param page_range:
-    :return:
+    :param guid: OSF GUID of a user profile
+    :param resource_type: one of 'nodes', 'registrations', 'preprints' to indicate what type of resource to request
+    from OSF. also used to determine which date field to gather from response.
+    :param page_range: iterable of integers representing pages to be passed to get_user_resources()
+    :return: list of projects as tuples with form (guid, title, date_field)
     """
 
     if resource_type == 'nodes':
@@ -282,11 +307,16 @@ def map_get_user_resources(guid, resource_type, page_range):
 
 def map_reduce_get_user_resources(guid, resource_type, num_processes=2):
     """
+    Gathers all nodes of some type for a given user.
+    Makes initial request to user/{guid}/{resource_type} endpoint to determine how many pages of results to expect.
+    Maps page range to map_get_user_resources().
+    Reduces output to list of nodes ready for insertion into DB.
 
-    :param guid:
-    :param resource_type:
-    :param num_processes:
-    :return:
+    :param guid: OSF GUID of a user profile
+    :param resource_type: one of 'nodes', 'registrations', 'preprints' to indicate what type of resource to request
+    from OSF. also used to determine which date field to gather from response.
+    :param num_processes: how many processes to instantiate in process pool
+    :return: list of nodes as tuples with form (guid, title, date_field)
     """
 
     response = get_user_resources(guid, resource_type, page=1)
@@ -402,8 +432,8 @@ def get_user_nodes(guid):
 def main():
     from config import lt_guids
 
-    for prof in lt_guids.values():
-        user = process_user_profile(prof)
+    for guid in lt_guids.values():
+        user = process_user_profile(guid)
         load_user_profile(user)
 
 

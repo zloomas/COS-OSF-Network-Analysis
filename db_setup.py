@@ -1,6 +1,7 @@
 import sqlite3
+from config import db_name
 
-conn = sqlite3.connect('lt_osf.sqlite')
+conn = sqlite3.connect(db_name)
 
 conn.execute(
     """
@@ -83,14 +84,13 @@ conn.execute(
 
 conn.execute(
     """
-    CREATE TABLE IF NOT EXISTS contributors(
+    CREATE TABLE IF NOT EXISTS node_contributors(
            user TEXT,
            node TEXT,
            UNIQUE(user, node)
            );
     """
 )
-
 
 conn.execute(
     """
@@ -104,6 +104,16 @@ conn.execute(
 
 conn.execute(
     """
+    CREATE TABLE IF NOT EXISTS registration_contributors(
+           user TEXT,
+           node TEXT,
+           UNIQUE(user, node)
+           );
+    """
+)
+
+conn.execute(
+    """
     CREATE TABLE IF NOT EXISTS preprints(
            id TEXT PRIMARY KEY,
            title TEXT,
@@ -111,6 +121,17 @@ conn.execute(
            );
     """
 )
+
+conn.execute(
+    """
+    CREATE TABLE IF NOT EXISTS preprint_contributors(
+           user TEXT,
+           node TEXT,
+           UNIQUE(user, node)
+           );
+    """
+)
+
 conn.commit()
 conn.close()
 

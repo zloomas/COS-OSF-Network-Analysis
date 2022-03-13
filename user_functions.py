@@ -1,4 +1,3 @@
-import re
 import requests
 import sqlite3
 import functools
@@ -309,7 +308,7 @@ def map_reduce_get_user_resources(guid, resource_type, num_processes=2):
     """
     Gathers all nodes of some type for a given user.
     Makes initial request to user/{guid}/{resource_type} endpoint to determine how many pages of results to expect.
-    Maps page range to map_get_user_resources().
+    Maps page ranges to map_get_user_resources().
     Reduces output to list of nodes ready for insertion into DB.
 
     :param guid: OSF GUID of a user profile
@@ -344,7 +343,7 @@ def map_reduce_get_user_resources(guid, resource_type, num_processes=2):
     num_pages = ceil(response['links']['meta']['total'] / 10)
 
     if num_pages == 1:
-        return initial_nodes
+        return list(filter(lambda x: x is not None, initial_nodes))
 
     pages = [num for num in range(2, num_pages + 1)]
 
@@ -364,78 +363,34 @@ def map_reduce_get_user_resources(guid, resource_type, num_processes=2):
     return resources
 
 
-def load_nodes(resp_data, conn):
+def load_user_resources(resources, resource_type):
     """
+    Takes list of tuples representing node-level data and inserts into
 
-    :param resp_data: list of nodes from data key of of OSF API response for user nodes
-    :param conn:
-    :return:
-    """
-    if not resp_data:
-        return
-
-    nodes_insert = []
-    for node in resp_data:
-        nodes_insert.append(
-            (
-                node['id'],
-                node['attributes']['title'],
-                node['attributes']['date_created']
-            )
-        )
-
-    conn.executemany(
-        "INSERT OR REPLACE INTO nodes(id, title, date_created) VALUES (?, ?, ?)",
-        nodes_insert
-    )
-    conn.commit()
-
-
-# for some user, collect all project GUIDs
-def get_user_nodes(guid):
-    """
-    Given user GUID, get all nodes for user from OSF
-
-    :param guid: OSF GUID of a user profile
+    :param resources: list of nodes from data key of of OSF API response for user nodes
+    :param resource_type: one of 'nodes', 'registrations', 'preprints' to indicate what type of resource is provided
     :return: None
     """
 
-    nodes_url = base_url + '/users/' + guid + '/nodes'
-    resp = requests.get(nodes_url, headers=headers)
-
-    if resp.ok:
-        resp_dict = resp.json()
-        last_link = resp_dict['links']['last']
-        if last_link is not None:
-            num_pages = int(re.findall(r'[0-9]+$', last_link)[0])
-        else:
-            num_pages = 1
+    if resource_type == 'nodes':
+        insert = 'INSERT OR REPLACE INTO nodes(id, title, date_created) VALUES (?, ?, ?)'
+    elif resource_type == 'registrations':
+        insert = 'INSERT OR REPLACE INTO registrations(id, title, date_registered) VALUES (?, ?, ?)'
+    elif resource_type == 'preprints':
+        insert = 'INSERT OR REPLACE INTO preprints(id, title, date_published) VALUES (?, ?, ?)'
     else:
-        print(f'{guid} nodes page 1 request failed: {resp.reason}')
+        print('resource_type is not supported, exiting process')
         return
 
-    load_nodes(resp_dict['data'], conn)
+    conn = sqlite3.connect('lt_osf.sqlite')
+    try:
+        conn.executemany(
+            insert,
+            resources
+        )
+    except ValueError:
+        print(f'load failed at {resource_type}')
+        print(f'example input {resources[0]}')
 
-    if num_pages > 1:
-        for page in range(2, num_pages + 1):
-            page_resp = requests.get(nodes_url, params={'page': page}, headers=headers)
-            if page_resp.ok:
-                load_nodes(page_resp.json()['data'], conn)
-            else:
-                print(f'{guid} nodes page {page} request failed: {page_resp.reason}')
-                continue
-
-# for some user, collect all registration GUIDs
-# for some user, collect all preprint GUIDs
-
-
-def main():
-    from config import lt_guids
-
-    for guid in lt_guids.values():
-        user = process_user_profile(guid)
-        load_user_profile(user)
-
-
-if __name__ == '__main__':
-    main()
+    conn.commit()
+    conn.close()

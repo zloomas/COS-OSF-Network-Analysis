@@ -182,9 +182,15 @@ def process_project_contributors(response_json):
 
 def get_project_record(guid):
     """
+    Gathers all tags, child nodes, and contributors for some given project GUID.
+    Greedily gathers nodes and contributors both in relation to source project and as independent entities.
+    Prepares collected data for insertion into DB.
 
-    :param guid:
-    :return:
+    :param guid: OSF GUID of a project
+    :return: dictionary with keys 'tags', 'children', 'nodes', 'contributors', 'users' where each has a list of objects
+    for insertion into DB, or an empty list if data is unavailable.
+    All but 'users' will return a list of tuples; 'users' returns a list of dictionaries where each dict is a full
+    user profile to be passed to user_functions.load_user_profile.
     """
     response_json = get_project(guid, params={'embed': ['children', 'contributors']})
 

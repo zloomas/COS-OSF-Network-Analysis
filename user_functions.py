@@ -342,7 +342,7 @@ def map_reduce_get_user_resources(guid, resource_type, num_processes=2):
 
     num_pages = ceil(response['links']['meta']['total'] / 10)
 
-    if num_pages == 1:
+    if num_pages <= 1:
         return list(filter(lambda x: x is not None, initial_nodes))
 
     pages = [num for num in range(2, num_pages + 1)]

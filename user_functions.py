@@ -228,7 +228,8 @@ def load_user_profile(user_insert):
 
 def get_user_resources(guid, resource_type, page):
     """
-    Given user GUID, get one page of nodes of some type from OSF
+    Given user GUID, get one page of nodes of some type from OSF.
+    For projects and registrations, restrict to just top-level nodes.
 
     :param guid: OSF GUID of a user profile
     :param resource_type: one of 'nodes', 'registrations', 'preprints' to indicate what type of resource to request
@@ -243,8 +244,12 @@ def get_user_resources(guid, resource_type, page):
         print(f'exiting process at get_user_resources({guid}, {resource_type}, {page})')
         return resp_json
 
+    params = {'page': page}
+    if resource_type != 'preprints':
+        params['filter[parent]'] = ''
+
     nodes_url = f'{base_url}/users/{guid}/{resource_type}'
-    resp = requests.get(nodes_url, headers=headers, params={'page': page})
+    resp = requests.get(nodes_url, headers=headers, params=params)
 
     if resp.ok:
         resp_json = resp.json()

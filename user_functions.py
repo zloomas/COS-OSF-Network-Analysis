@@ -3,7 +3,7 @@ import sqlite3
 import functools
 from multiprocessing import Pool
 from math import ceil
-from config import base_url, headers
+from config import base_url, headers, db_name
 
 
 # for some user, collect: name, date_registered, socials, employment, education
@@ -183,7 +183,7 @@ def load_user_profile(user_insert):
     :return: None
     """
 
-    conn = sqlite3.connect('lt_osf.sqlite')
+    conn = sqlite3.connect(db_name)
     if not user_insert:
         print('no data in user_insert, exiting process')
         return
@@ -382,7 +382,7 @@ def load_user_resources(resources, resource_type):
         print('resource_type is not supported, exiting process')
         return
 
-    conn = sqlite3.connect('lt_osf.sqlite')
+    conn = sqlite3.connect(db_name)
     try:
         conn.executemany(
             insert,

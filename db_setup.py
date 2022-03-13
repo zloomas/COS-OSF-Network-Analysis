@@ -73,7 +73,7 @@ conn.execute(
 
 conn.execute(
     """
-    CREATE TABLE IF NOT EXISTS node_children(
+    CREATE TABLE IF NOT EXISTS node_relations(
            parent TEXT,
            child TEXT,
            UNIQUE(parent, child)
@@ -91,6 +91,26 @@ conn.execute(
     """
 )
 
+
+conn.execute(
+    """
+    CREATE TABLE IF NOT EXISTS registrations(
+           id TEXT PRIMARY KEY,
+           title TEXT,
+           date_registered TEXT
+           );
+    """
+)
+
+conn.execute(
+    """
+    CREATE TABLE IF NOT EXISTS preprints(
+           id TEXT PRIMARY KEY,
+           title TEXT,
+           date_published TEXT
+           );
+    """
+)
 conn.commit()
 conn.close()
 

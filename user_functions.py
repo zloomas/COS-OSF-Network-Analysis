@@ -80,7 +80,7 @@ def process_user_employment(response_json):
         # require numeric year values for start and end dates
         try:
             start_year = int(job['startYear'])
-        except ValueError:
+        except (ValueError, TypeError):
             start_year = None
 
         ongoing = job['ongoing']
@@ -91,7 +91,7 @@ def process_user_employment(response_json):
         else:
             try:
                 end_year = int(job['endYear'])
-            except ValueError:
+            except (ValueError, TypeError):
                 end_year = None
 
         employment.append(
@@ -125,7 +125,7 @@ def process_user_education(response_json):
         # require numeric year values for start and end dates
         try:
             start_year = int(e['startYear'])
-        except ValueError:
+        except (ValueError, TypeError):
             start_year = None
 
         ongoing = e['ongoing']
@@ -136,7 +136,7 @@ def process_user_education(response_json):
         else:
             try:
                 end_year = int(e['endYear'])
-            except ValueError:
+            except (ValueError, TypeError):
                 end_year = None
 
         education.append(

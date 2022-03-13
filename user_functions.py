@@ -183,10 +183,11 @@ def load_user_profile(user_insert):
     :return: None
     """
 
-    conn = sqlite3.connect(db_name)
     if not user_insert:
         print('no data in user_insert, exiting process')
         return
+
+    conn = sqlite3.connect(db_name)
 
     if user_insert['user']:
         conn.execute(

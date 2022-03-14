@@ -8,7 +8,7 @@ from user_functions import map_reduce_get_user_resources, load_user_resources
 
 def get_seed_users():
     """
-    Identify COS staff from COS OSF project (https://osf.io/api6f/), load into DB.
+    Identify COS staff from COS OSF project (https://osf.io/api6f/), load user profiles into DB.
 
     :return: None
     """
@@ -29,6 +29,7 @@ def get_seed_users():
 
 def get_seed_projects(num_processes=2):
     """
+    Using nodes gathered from staff list from initial project, gather contributors and child nodes.
 
     :param num_processes: how many processes to instantiate in process pool
     :return: None

@@ -86,16 +86,16 @@ def process_project_children(response_json):
                 print('exiting node children pagination requests')
                 break
             else:
-                response_json = response.json()['data']
+                response_json = response.json()
 
-            for child in response_json['embeds']['children']['data']:
+            for child in response_json['data']:
                 children_insert[child_ix] = (parent, child['id'])
                 child_ix += 1
 
                 nodes_insert[node_ix] = (child['id'], child['attributes']['title'], child['attributes']['date_created'])
                 node_ix += 1
 
-            next_page = response_json['embeds']['children']['links']['next']
+            next_page = response_json['links']['next']
 
     return children_insert, nodes_insert
 
@@ -157,7 +157,12 @@ def process_project_contributors(response_json):
                 response_json = response.json()
 
             for contrib in response_json['data']:
-                this_user = contrib['embeds']['users']['data']
+                try:
+                    this_user = contrib['embeds']['users']['data']
+                except KeyError:
+                    print('embedded contributor missing data?')
+                    print(contrib)
+                    continue
                 contributors_insert[contributors_ix] = (this_user['id'], this_node)
                 contributors_ix += 1
 
@@ -176,6 +181,9 @@ def process_project_contributors(response_json):
                 users_ix += 1
 
             next_page = response_json['links']['next']
+
+    contributors_insert = list(filter(lambda x: x is not None, contributors_insert))
+    user_profiles = list(filter(lambda x: x is not None, user_profiles))
 
     return contributors_insert, user_profiles
 
@@ -255,3 +263,17 @@ def load_project_record(project_insert):
 
     for u in project_insert['users']:
         load_user_profile(u)
+
+
+def map_get_project_record(guids):
+    """
+    Allow parallelization of gathering and loading project resources. Intended for use in collect_data.py
+
+    :param guids: iterable of OSF project node GUIDs
+    :return: None
+    """
+
+    for guid in guids:
+        print(f'gathering node data at {guid}')
+        node = get_project_record(guid)
+        load_project_record(node)

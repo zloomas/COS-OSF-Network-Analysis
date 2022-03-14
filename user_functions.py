@@ -78,21 +78,38 @@ def process_user_employment(response_json):
             continue
 
         # require numeric year values for start and end dates
-        try:
-            start_year = int(job['startYear'])
-        except (ValueError, TypeError):
-            start_year = None
-
-        ongoing = job['ongoing']
-
-        # no end date expected if job is ongoing
-        if ongoing:
-            end_year = None
-        else:
+        if 'startYear' in job:
             try:
-                end_year = int(job['endYear'])
+                start_year = int(job['startYear'])
+            except (ValueError, TypeError):
+                start_year = None
+
+            ongoing = job['ongoing']
+
+            # no end date expected if job is ongoing
+            if ongoing:
+                end_year = None
+            else:
+                try:
+                    end_year = int(job['endYear'])
+                except (ValueError, TypeError):
+                    end_year = None
+        elif 'start' in job:
+
+            try:
+                start_year = int(job['start'])
+            except (ValueError, TypeError):
+                start_year = None
+
+            try:
+                end_year = int(job['end'])
             except (ValueError, TypeError):
                 end_year = None
+
+            ongoing = end_year is None
+        else:
+            ongoing = False
+            start_year = end_year = None
 
         employment.append(
             (guid, title, institution, start_year, end_year, ongoing)
@@ -123,21 +140,38 @@ def process_user_education(response_json):
             continue
 
         # require numeric year values for start and end dates
-        try:
-            start_year = int(e['startYear'])
-        except (ValueError, TypeError):
-            start_year = None
-
-        ongoing = e['ongoing']
-
-        # no end date expected if degree is ongoing
-        if ongoing:
-            end_year = None
-        else:
+        if 'startYear' in e:
             try:
-                end_year = int(e['endYear'])
+                start_year = int(e['startYear'])
+            except (ValueError, TypeError):
+                start_year = None
+
+            ongoing = e['ongoing']
+
+            # no end date expected if degree is ongoing
+            if ongoing:
+                end_year = None
+            else:
+                try:
+                    end_year = int(e['endYear'])
+                except (ValueError, TypeError):
+                    end_year = None
+        elif 'start' in e:
+
+            try:
+                start_year = int(e['start'])
+            except (ValueError, TypeError):
+                start_year = None
+
+            try:
+                end_year = int(e['end'])
             except (ValueError, TypeError):
                 end_year = None
+
+            ongoing = end_year is None
+        else:
+            ongoing = False
+            start_year = end_year = None
 
         education.append(
             (guid, degree, institution, start_year, end_year, ongoing)

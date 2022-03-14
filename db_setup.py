@@ -15,6 +15,15 @@ conn.execute(
 
 conn.execute(
     """
+    CREATE TABLE IF NOT EXISTS cos_staff(
+           id TEXT PRIMARY KEY,
+           current INT NOT NULL DEFAULT 1
+           );
+    """
+)
+
+conn.execute(
+    """
     CREATE TABLE IF NOT EXISTS jobs(
            id TEXT NOT NULL,
            title TEXT NOT NULL,

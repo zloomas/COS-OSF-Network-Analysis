@@ -5,6 +5,13 @@ from config import db_name
 
 
 def create_network():
+    """
+    Gathers all users and their co-collaborations from DB.
+    
+    :return: tuple, two dataframes: 
+             (1) users (nodes) with columns: 'guid', 'full_name', 'is_cos' (None if non-COS, 0 if former and 1 if current)
+             (2) edges with columns: 'user_a', 'user_b', 'project_guid'
+    """
     conn = sqlite3.connect(db_name)
     cur = conn.cursor()
 

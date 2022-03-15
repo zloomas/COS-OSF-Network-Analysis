@@ -48,12 +48,14 @@ def process_project_tags(response_json):
 def process_project_children(response_json):
     """
     Given response JSON of request to OSF node with embedded children param, gather all child nodes.
-    Prepares list of tuples for insertion into DB.
+    Prepares lists of tuples for insertion into DB.
     Makes additional requests as necessary to collect additional results if more than one page of child nodes exists.
     Intended to be used with output of get_project().
 
     :param response_json: content of 'data' key from project (node) response
-    :return: list of tuples of form (parent, child) for insertion into DB
+    :return: tuple, two lists:
+             (1) list of node relationship tuples of form (parent, child) for insertion into DB
+             (2) list of node entity tuples of form (id, title, date_created) for insertion into DB
     """
 
     try:

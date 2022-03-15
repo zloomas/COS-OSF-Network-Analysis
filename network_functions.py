@@ -8,9 +8,10 @@ def create_network():
     """
     Gathers all users and their co-collaborations from DB.
     
-    :return: tuple, two dataframes: 
-             (1) users (nodes) with columns: 'guid', 'full_name', 'is_cos' (None if non-COS, 0 if former and 1 if current)
-             (2) edges with columns: 'user_a', 'user_b', 'project_guid'
+    :return: tuple, three dataframes: 
+             (1) users (network nodes) with columns: 'guid', 'full_name', 'is_cos' (None if non-COS, 0 if former and 1 if current)
+             (2) nodes (OSF projects) with columns: 'root', 'base'
+             (2) edges with columns: 'internal', 'external', 'project_guid'
     """
     conn = sqlite3.connect(db_name)
     cur = conn.cursor()
@@ -19,7 +20,6 @@ def create_network():
         """
         SELECT *
           FROM node_contributors
-         WHERE node IN (SELECT parent FROM node_relations)
          ORDER BY node, user;
         """
     )
@@ -27,13 +27,16 @@ def create_network():
 
     cur.execute(
         """
-        SELECT n.id,
-               c.count
-          FROM nodes n
-          LEFT JOIN (SELECT node, COUNT(user) AS count FROM node_contributors GROUP BY node) AS c
-               ON n.id = c.node
-         WHERE n.id IN (SELECT parent FROM node_relations)
-         ORDER BY n.id;
+        SELECT nr2.parent,
+               nr1.parent,
+               nr1.child,
+               nr3.child
+          FROM node_relations nr1
+          LEFT JOIN node_relations AS nr2
+               ON nr1.parent = nr2.child
+          LEFT JOIN node_relations AS nr3
+               ON nr1.child = nr3.parent
+         ORDER BY nr2.parent;
         """
     )
     nodes = cur.fetchall()
@@ -42,7 +45,6 @@ def create_network():
         """
         SELECT u.id,
                u.full_name,
-               u.date_created,
                cos.current
           FROM users u
           LEFT JOIN cos_staff cos ON u.id=cos.id
@@ -53,10 +55,30 @@ def create_network():
 
     conn.close()
 
-    users_df = pd.DataFrame(users, columns=['guid', 'full_name', 'date_created', 'is_cos'])
+    users_df = pd.DataFrame(users, columns=['guid', 'full_name', 'is_cos'])
     cos_staff = users_df[users_df.is_cos.notna()].guid.values
+    
+    node_relations = []
+    for n in nodes:
+        node_type = None
+        n_filter = list(filter(lambda x: x is not None, n))
+        if len(n_filter) == 2:
+            if len(set(n_filter)) == 1:
+                node_type = 'root'
+            else:
+                node_type = 'child'
+        elif len(n_filter) == 3:
+            node_type = 'grandchild'
+        
+        if node_type:
+            node_relations.append((n_filter[0], n_filter[-1], node_type))
+        else:
+            print('uh oh')
+            print(n)
+        
+    nodes_df = pd.DataFrame(node_relations, columns=['root', 'base', 'type']).drop_duplicates().reset_index()
 
-    contributors_ = {n[0]: [] for n in nodes}
+    contributors_ = {n: [] for n in nodes_df.base.unique()}
 
     for c in contributors:
         contributors_[c[1]].append(c[0])
@@ -74,4 +96,4 @@ def create_network():
 
     edges_df = pd.DataFrame(edges, columns=['internal', 'external', 'project_guid'])
 
-    return users_df, edges_df
+    return users_df, nodes_df, edges_df

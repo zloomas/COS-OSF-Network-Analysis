@@ -61,6 +61,38 @@ def get_seed_projects(num_processes=2):
             pool.map(map_get_project_record, chunks)
 
 
+def get_next_level(num_processes=2):
+    """
+    Identify nodes for which extension data (contributors and child nodes) has not yet been gathered,
+    extend node records and load into DB.
+
+    :param num_processes: how many processes to instantiate in process pool
+    :return: None
+    """
+    conn = sqlite3.connect(db_name)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id 
+          FROM nodes 
+         WHERE id NOT IN (SELECT DISTINCT parent FROM node_relations) AND
+               id NOT IN (SELECT DISTINCT node FROM node_contributors);
+        """)
+    new_nodes = cur.fetchall()
+    conn.close()
+
+    node_guids = [n[0] for n in new_nodes]
+
+    chunk_len = ceil(len(node_guids) / num_processes)
+
+    if chunk_len:
+
+        chunks = [node_guids[i:i + chunk_len] for i in range(0, len(node_guids), chunk_len)]
+
+        with Pool(num_processes) as pool:
+            pool.map(map_get_project_record, chunks)
+
+
 def main():
     import db_setup
     get_seed_users()

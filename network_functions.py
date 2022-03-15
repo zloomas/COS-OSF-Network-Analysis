@@ -10,21 +10,24 @@ def create_network():
     
     :return: tuple, three dataframes: 
              (1) users (network nodes) with columns: 'guid', 'full_name', 'is_cos' (None if non-COS, 0 if former and 1 if current)
-             (2) nodes (OSF projects) with columns: 'root', 'base'
+             (2) nodes (OSF projects) with columns: 'root', 'base', 'type' (of base node, either child or grandchild)
              (2) edges with columns: 'internal', 'external', 'project_guid'
     """
     conn = sqlite3.connect(db_name)
     cur = conn.cursor()
-
+    
     cur.execute(
         """
-        SELECT *
-          FROM node_contributors
-         ORDER BY node, user;
+        SELECT u.id,
+               u.full_name,
+               cos.current
+          FROM users u
+          LEFT JOIN cos_staff cos ON u.id=cos.id
+         ORDER BY u.id;
         """
     )
-    contributors = cur.fetchall()
-
+    users = cur.fetchall()
+    
     cur.execute(
         """
         SELECT nr2.parent,
@@ -43,15 +46,12 @@ def create_network():
 
     cur.execute(
         """
-        SELECT u.id,
-               u.full_name,
-               cos.current
-          FROM users u
-          LEFT JOIN cos_staff cos ON u.id=cos.id
-         ORDER BY u.id;
+        SELECT node, user
+          FROM node_contributors
+         ORDER BY node, user;
         """
     )
-    users = cur.fetchall()
+    contributors = cur.fetchall()
 
     conn.close()
 
@@ -78,14 +78,17 @@ def create_network():
         
     nodes_df = pd.DataFrame(node_relations, columns=['root', 'base', 'type']).drop_duplicates().reset_index()
 
-    contributors_ = {n: [] for n in nodes_df.base.unique()}
+    contributor_relations = dict()
 
     for c in contributors:
-        contributors_[c[1]].append(c[0])
+        if c[0] in contributor_relations:
+            contributor_relations[c[0]].append(c[1])
+        else:
+            contributor_relations[c[0]] = [c[1]]
 
     edges = []
 
-    for node, users in contributors_.items():
+    for node, users in contributor_relations.items():
         for edge in itertools.combinations(users, 2):
             a = edge[0]
             b = edge[1]

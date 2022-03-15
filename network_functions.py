@@ -78,15 +78,17 @@ def assign_edge_type(row, ref):
 
     :param row: row in dataframe with at least two columns of users, user_a and user_b
     :param ref: reference list of internal nodes
-    :return: str, edge type, one of 'internal', 'mixed', 'external'
+    :return: str, edge type, one of 'internal', 'mixed_a' (user_a is internal), 'mixed_b' (user_a is internal), 'external'
     """
     a = row['user_a'] in ref
     b = row['user_b'] in ref
 
     if a and b:
         edge_type = 'internal'
-    elif a or b:
-        edge_type = 'mixed'
+    elif a and not b:
+        edge_type = 'mixed_a'
+    elif not a and b:
+        edge_type = 'mixed_b'
     else:
         edge_type = 'external'
 

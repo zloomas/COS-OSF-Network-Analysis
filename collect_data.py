@@ -53,10 +53,12 @@ def get_seed_projects(num_processes=2):
 
     chunk_len = ceil(len(nodes) / num_processes)
 
-    chunks = [nodes[i:i + chunk_len] for i in range(0, len(nodes), chunk_len)]
+    if chunk_len:
 
-    with Pool(num_processes) as pool:
-        pool.map(map_get_project_record, chunks)
+        chunks = [nodes[i:i + chunk_len] for i in range(0, len(nodes), chunk_len)]
+
+        with Pool(num_processes) as pool:
+            pool.map(map_get_project_record, chunks)
 
 
 def main():

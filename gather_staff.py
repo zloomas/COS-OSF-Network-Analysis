@@ -1,10 +1,17 @@
 import sqlite3
-from config import db_name, staff_insert, cos_alumni
+from config import db_name, seed_project, staff_insert, cos_alumni
+from user_functions import map_reduce_get_user_resources, load_user_resources
+from collect_data import get_seed_projects
 
 
-# using staff and alumni pages from COS website,
-# try to verify that we've identified as many current and former staff as easily possible
 def main():
+    """
+    Using info gathered from staff and alumni pages on COS website,
+    try to verify that we've identified as many current and former staff as easily possible.
+    Complete gaps in COS staff data by selecting staff missing from the COS OSF page and collecting their project data.
+    
+    :return: None
+    """
     find_alumni = [(name,) for name in cos_alumni]
 
     conn = sqlite3.connect(db_name)
@@ -32,7 +39,28 @@ def main():
     )
     conn.commit()
 
+    cur.execute(
+        """
+        SELECT id
+          FROM cos_staff
+         WHERE id NOT IN (SELECT user FROM node_contributors WHERE node=?) AND
+               current=1;
+        """,
+        (seed_project,)
+    )
+    missing = cur.fetchall()
+
     conn.close()
+
+    missing = [m[0] for m in missing]
+
+    for ix, guid in enumerate(missing):
+        print(f'fetching nodes for user {ix} - {guid}')
+        nodes = map_reduce_get_user_resources(guid, 'nodes')
+        load_user_resources(nodes, 'nodes')
+
+    # gather node guids from newly collected user nodes to enhance with additional data
+    get_seed_projects()
 
 
 if __name__ == '__main__':

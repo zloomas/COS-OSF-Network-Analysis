@@ -37,7 +37,7 @@ Defines functions to:
 
 ##### [collect_data.py](collect_data.py)
     
-Uses functions from user_functions and project_functions to collect data as described above in [Data collection](#data_collection). 
+Uses functions from user_functions and project_functions to collect data. 
 Running as a script will collect initial data for users on seed project, their profiles and projects, and the contributors and child nodes of their projects. 
 `get_next_level()` must be run separately to collect the second degree projects and contributors, 
 and may be run iteratively to continue to build the network out to further and further degrees of separation from current COS staff.
